@@ -66,6 +66,7 @@
             this.label21 = new System.Windows.Forms.Label();
             this.colorFilters = new System.Windows.Forms.CheckBox();
             this.colorChat = new System.Windows.Forms.CheckBox();
+            this.darkMode = new System.Windows.Forms.CheckBox();
             this.label12 = new System.Windows.Forms.Label();
             this.label3 = new System.Windows.Forms.Label();
             this.banTicks = new System.Windows.Forms.TextBox();
@@ -451,6 +452,7 @@
             // 
             this.tabPage1.Controls.Add(this.buffer);
             this.tabPage1.Controls.Add(this.label21);
+            this.tabPage1.Controls.Add(this.darkMode);
             this.tabPage1.Controls.Add(this.colorFilters);
             this.tabPage1.Controls.Add(this.colorChat);
             this.tabPage1.Controls.Add(this.label12);
@@ -526,7 +528,17 @@
             this.colorChat.TabIndex = 52;
             this.colorChat.Text = "Color chat";
             this.colorChat.UseVisualStyleBackColor = true;
-            // 
+            //
+            // darkMode
+            //
+            this.darkMode.AutoSize = true;
+            this.darkMode.Location = new System.Drawing.Point(106, 62);
+            this.darkMode.Name = "darkMode";
+            this.darkMode.Size = new System.Drawing.Size(77, 17);
+            this.darkMode.TabIndex = 56;
+            this.darkMode.Text = "Dark mode";
+            this.darkMode.UseVisualStyleBackColor = true;
+            //
             // label12
             // 
             this.label12.AutoSize = true;
@@ -1195,6 +1207,7 @@
         private System.Windows.Forms.CheckBox showWaypointConditionLog;
         private System.Windows.Forms.CheckBox colorFilters;
         private System.Windows.Forms.CheckBox colorChat;
+        private System.Windows.Forms.CheckBox darkMode;
         private System.Windows.Forms.TextBox filters;
         private System.Windows.Forms.Label label20;
         private System.Windows.Forms.TextBox buffer;

@@ -17,6 +17,7 @@ namespace DaRT
         public GUIconfirm(GUImain gui, RCon rcon)
         {
             InitializeComponent();
+            ThemeManager.Apply(this);
 
             this.gui = gui;
             this.rcon = rcon;

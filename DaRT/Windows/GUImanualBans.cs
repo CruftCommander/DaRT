@@ -18,6 +18,7 @@ namespace DaRT
         public GUImanualBans(RCon rcon)
         {
             InitializeComponent();
+            ThemeManager.Apply(this);
 
             _rcon = rcon;
             this.Text = "Manually add ban(s)";

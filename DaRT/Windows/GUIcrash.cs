@@ -16,6 +16,7 @@ namespace DaRT
         public GUIcrash(Exception e, String version, GUImain gui)
         {
             InitializeComponent();
+            ThemeManager.Apply(this);
 
             this.gui = gui;
 

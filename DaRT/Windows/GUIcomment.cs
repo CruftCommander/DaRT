@@ -21,6 +21,7 @@ namespace DaRT
         public GUIcomment()
         {
             InitializeComponent();
+            ThemeManager.Apply(this);
         }
         public void Comment(GUImain gui, SqliteConnection connection, String name, String guid, String mode)
         {

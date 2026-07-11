@@ -20,6 +20,7 @@ namespace DaRT
         {
             InitializeComponent();
             InitializeList();
+            ThemeManager.Apply(this);
 
             this.gui = gui;
             _connection = connection;

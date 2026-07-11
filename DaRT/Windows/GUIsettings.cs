@@ -19,6 +19,7 @@ namespace DaRT
         public GUIsettings(GUImain gui)
         {
             InitializeComponent();
+            ThemeManager.Apply(this);
 
             this.gui = gui;
 
@@ -30,6 +31,7 @@ namespace DaRT
             tooltip.SetToolTip(showTimestamps, "Would you like to have timestamps in your log window?");
             tooltip.SetToolTip(colorChat, "Should the chat be colored in all tab?");
             tooltip.SetToolTip(colorFilters, "Should the filter logs be colored in all tab?");
+            tooltip.SetToolTip(darkMode, "Should DaRT use a dark color theme?");
             tooltip.SetToolTip(refreshOnJoin, "Do you want DaRT to automatically refresh everytime a player joins or leaves?");
             tooltip.SetToolTip(showGlobalChat, "Should the global chat be shown in your log?\r\nIMPORTANT: The global chat will always be transmitted to the server.");
             tooltip.SetToolTip(showSideChat, "Should the side chat be shown in your log?\r\nIMPORTANT: The side chat will only be transmitted to the server if atleast two players are online and in the same team.");
@@ -65,6 +67,7 @@ namespace DaRT
             showTimestamps.Checked = Settings.Default.showTimestamps;
             colorChat.Checked = Settings.Default.colorChat;
             colorFilters.Checked = Settings.Default.colorFilters;
+            darkMode.Checked = Settings.Default.darkMode;
             refreshOnJoin.Checked = Settings.Default.refreshOnJoin;
             showGlobalChat.Checked = Settings.Default.showGlobalChat;
             showSideChat.Checked = Settings.Default.showSideChat;
@@ -122,11 +125,14 @@ namespace DaRT
 
         private void done_Click(object sender, EventArgs e)
         {
+            bool darkModeChanged = Settings.Default.darkMode != darkMode.Checked;
+
             Settings.Default.savePlayers = savePlayers.Checked;
             Settings.Default.saveHosts = saveHosts.Checked;
             Settings.Default.showTimestamps = showTimestamps.Checked;
             Settings.Default.colorChat = colorChat.Checked;
             Settings.Default.colorFilters = colorFilters.Checked;
+            Settings.Default.darkMode = darkMode.Checked;
             Settings.Default.refreshOnJoin = refreshOnJoin.Checked;
             Settings.Default.showGlobalChat = showGlobalChat.Checked;
             Settings.Default.showSideChat = showSideChat.Checked;
@@ -189,6 +195,12 @@ namespace DaRT
                 gui.Log("An error occurred while applying the settings.", LogType.Debug, false);
             }
             Settings.Default.Save();
+
+            if (darkModeChanged)
+            {
+                foreach (Form form in Application.OpenForms)
+                    ThemeManager.Apply(form);
+            }
 
             this.Close();
         }

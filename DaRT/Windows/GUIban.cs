@@ -19,6 +19,7 @@ namespace DaRT
         public GUIban(RCon rcon, int id, string name, string guid, string ip, bool online)
         {
             InitializeComponent();
+            ThemeManager.Apply(this);
 
             _rcon = rcon;
             _rcon.Pending = name;

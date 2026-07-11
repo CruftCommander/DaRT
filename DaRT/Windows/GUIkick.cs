@@ -18,6 +18,7 @@ namespace DaRT
         public GUIkick(GUImain gui, int id, String name)
         {
             InitializeComponent();
+            ThemeManager.Apply(this);
 
             this.gui = gui;
             this.id = id;

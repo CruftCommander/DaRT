@@ -2344,11 +2344,11 @@ namespace DaRT
                     all.SelectionLength = 0;
 
                     if (isChat && !Settings.Default.colorChat)
-                        all.SelectionColor = this.GetColor("#000000");
+                        all.SelectionColor = ThemeManager.LogColor(this.GetColor("#000000"));
                     else if(isFilter && !Settings.Default.colorFilters)
-                        all.SelectionColor = this.GetColor("#000000");
+                        all.SelectionColor = ThemeManager.LogColor(this.GetColor("#000000"));
                     else
-                        all.SelectionColor = color;
+                        all.SelectionColor = ThemeManager.LogColor(color);
 
                     if (item.Important)
                         all.SelectionFont = new Font(all.Font, FontStyle.Bold);
@@ -2368,7 +2368,7 @@ namespace DaRT
                 {
                     box.SelectionStart = box.TextLength;
                     box.SelectionLength = 0;
-                    box.SelectionColor = color;
+                    box.SelectionColor = ThemeManager.LogColor(color);
                     if (item.Important)
                         box.SelectionFont = new Font(box.Font, FontStyle.Bold);
 
@@ -3166,6 +3166,8 @@ namespace DaRT
                 thread.IsBackground = true;
                 thread.Start();
             }
+
+            ThemeManager.Apply(this);
         }
 
         private void news_Click(object sender, EventArgs args)
