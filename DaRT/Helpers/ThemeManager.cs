@@ -31,6 +31,13 @@ namespace DaRT
     // - ProgressBar chrome is drawn by the OS visual style and is not recolored.
     // - Text already appended to a RichTextBox before a theme switch keeps whatever
     //   color it was written with; only newly appended text is affected.
+    // - A thin OS-drawn filler strip can remain visible past the last tab on an
+    //   owner-drawn TabControl's header; this is native tab-strip chrome outside
+    //   any single tab's paint rect and isn't worth hooking WM_PAINT to hide.
+    // - ListView scrollbars only render dark on Win10 1809+/Win11 builds that honor
+    //   the undocumented uxtheme SetPreferredAppMode opt-in (called once in
+    //   Program.cs); on older or unsupported builds they remain light. This is
+    //   cosmetic-only and silently falls back.
     public static class ThemeManager
     {
         private static readonly Color FormBack = Color.FromArgb(32, 32, 32);
@@ -49,6 +56,8 @@ namespace DaRT
             public bool UseVisualStyleBackColor;
             public Color LinkColor;
             public TabDrawMode TabDrawMode;
+            public TabSizeMode TabSizeMode;
+            public Size TabItemSize;
         }
 
         private static readonly ConditionalWeakTable<Control, ControlState> _states = new ConditionalWeakTable<Control, ControlState>();
@@ -61,8 +70,12 @@ namespace DaRT
         [DllImport("dwmapi.dll")]
         private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int pvAttribute, int cbAttribute);
 
+        [DllImport("user32.dll")]
+        private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
         private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
         private const int DWMWA_USE_IMMERSIVE_DARK_MODE_OLD = 19;
+        private const int LVM_GETHEADER = 0x101F;
 
         public static void Apply(Form form)
         {
@@ -137,7 +150,11 @@ namespace DaRT
 
             TabControl tab = control as TabControl;
             if (tab != null)
+            {
                 state.TabDrawMode = tab.DrawMode;
+                state.TabSizeMode = tab.SizeMode;
+                state.TabItemSize = tab.ItemSize;
+            }
 
             state.Captured = true;
         }
@@ -152,7 +169,7 @@ namespace DaRT
             else if (control is LinkLabel)
                 ApplyLinkLabel((LinkLabel)control, state, dark);
             else if (control is CheckBox || control is RadioButton || control is GroupBox || control is Label)
-                control.ForeColor = dark ? TextColor : state.ForeColor;
+                ApplyLabelLike(control, state, dark);
             else if (control is TextBox || control is RichTextBox || control is ListBox || control is ComboBox)
                 ApplyInput(control, state, dark);
             else if (control is ListView)
@@ -166,6 +183,16 @@ namespace DaRT
             }
             else
                 control.BackColor = dark ? SurfaceBack : state.BackColor; // Panel, PictureBox, TabPage, SplitContainer/SplitterPanel, etc.
+        }
+
+        private static void ApplyLabelLike(Control control, ControlState state, bool dark)
+        {
+            control.ForeColor = dark ? TextColor : state.ForeColor;
+
+            if (dark)
+                control.BackColor = state.BackColor == Color.Transparent ? Color.Transparent : FormBack;
+            else
+                control.BackColor = state.BackColor;
         }
 
         private static void ApplyButton(Button button, ControlState state, bool dark)
@@ -230,6 +257,21 @@ namespace DaRT
 
             listView.Invalidate();
             ApplyDarkScrollbar(listView, dark);
+            ApplyDarkListViewHeader(listView, dark);
+        }
+
+        private static void ApplyDarkListViewHeader(ListView listView, bool dark)
+        {
+            try
+            {
+                IntPtr headerHandle = SendMessage(listView.Handle, LVM_GETHEADER, IntPtr.Zero, IntPtr.Zero);
+                if (headerHandle != IntPtr.Zero)
+                    SetWindowTheme(headerHandle, dark ? "DarkMode_ItemsView" : "ItemsView", null);
+            }
+            catch
+            {
+                // Cosmetic only - ignore failures (unsupported OS, invalid handle, etc).
+            }
         }
 
         private static void ListViewDrawColumnHeader(object sender, DrawListViewColumnHeaderEventArgs e)
@@ -263,13 +305,39 @@ namespace DaRT
             {
                 tabControl.DrawMode = TabDrawMode.OwnerDrawFixed;
                 tabControl.DrawItem += TabControlDrawItem;
+                tabControl.SizeMode = TabSizeMode.Fixed;
+                tabControl.ItemSize = MeasureTabItemSize(tabControl);
             }
             else
             {
                 tabControl.DrawMode = state.TabDrawMode;
+                tabControl.SizeMode = state.TabSizeMode;
+                tabControl.ItemSize = state.TabItemSize;
             }
 
             tabControl.Invalidate();
+        }
+
+        private static Size MeasureTabItemSize(TabControl tabControl)
+        {
+            int maxTextWidth = 0;
+            foreach (TabPage page in tabControl.TabPages)
+            {
+                int width = TextRenderer.MeasureText(page.Text, tabControl.Font).Width;
+                if (width > maxTextWidth)
+                    maxTextWidth = width;
+            }
+
+            int tabWidth = maxTextWidth + 24;
+            int tabHeight = tabControl.Font.Height + 10;
+
+            // For Alignment Left/Right, WinForms swaps ItemSize semantics: Width becomes
+            // the on-screen tab height (perpendicular to the strip) and Height becomes
+            // the on-screen tab width (along the strip, where the rotated text runs).
+            if (tabControl.Alignment == TabAlignment.Left || tabControl.Alignment == TabAlignment.Right)
+                return new Size(tabHeight, tabWidth);
+
+            return new Size(tabWidth, tabHeight);
         }
 
         private static void TabControlDrawItem(object sender, DrawItemEventArgs e)
@@ -281,20 +349,26 @@ namespace DaRT
             TabPage page = tabControl.TabPages[e.Index];
             bool selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
 
+            // The selected tab is rendered ~2px larger than GetTabRect() reports, so
+            // inflate the fill/border to cover the system-painted sliver around it.
+            Rectangle fillBounds = e.Bounds;
+            if (selected)
+                fillBounds.Inflate(2, 2);
+
             using (Brush backBrush = new SolidBrush(selected ? SurfaceBack : FormBack))
-                e.Graphics.FillRectangle(backBrush, e.Bounds);
+                e.Graphics.FillRectangle(backBrush, fillBounds);
 
             using (Pen borderPen = new Pen(BorderColor))
-                e.Graphics.DrawRectangle(borderPen, e.Bounds.X, e.Bounds.Y, e.Bounds.Width - 1, e.Bounds.Height - 1);
-
-            StringFormat format = new StringFormat();
-            format.Alignment = StringAlignment.Center;
-            format.LineAlignment = StringAlignment.Center;
+                e.Graphics.DrawRectangle(borderPen, fillBounds.X, fillBounds.Y, fillBounds.Width - 1, fillBounds.Height - 1);
 
             using (Brush textBrush = new SolidBrush(TextColor))
             {
                 if (tabControl.Alignment == TabAlignment.Left || tabControl.Alignment == TabAlignment.Right)
                 {
+                    StringFormat format = new StringFormat();
+                    format.Alignment = StringAlignment.Center;
+                    format.LineAlignment = StringAlignment.Center;
+
                     System.Drawing.Drawing2D.GraphicsState savedState = e.Graphics.Save();
 
                     PointF center = new PointF(e.Bounds.X + e.Bounds.Width / 2f, e.Bounds.Y + e.Bounds.Height / 2f);
@@ -308,7 +382,8 @@ namespace DaRT
                 }
                 else
                 {
-                    e.Graphics.DrawString(page.Text, tabControl.Font, textBrush, e.Bounds, format);
+                    TextFormatFlags flags = TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis;
+                    TextRenderer.DrawText(e.Graphics, page.Text, tabControl.Font, e.Bounds, TextColor, flags);
                 }
             }
         }

@@ -18,6 +18,27 @@ namespace DaRT
         [DllImport("kernel32.dll", EntryPoint = "AllocConsole", SetLastError = true, CharSet = CharSet.Auto, CallingConvention = CallingConvention.StdCall)]
         private static extern int AllocConsole();
 
+        // Undocumented uxtheme ordinal 135 (Win10 1809+):
+        // 1809: AllowDarkModeForApp(BOOL); 1903+: SetPreferredAppMode(int), 1 = AllowDark.
+        // Cosmetic only - wrap in try/catch, skip if unavailable.
+        [DllImport("uxtheme.dll", EntryPoint = "#135", CharSet = CharSet.Unicode)]
+        private static extern int SetPreferredAppMode(int preferredAppMode);
+
+        static void EnablePreferredDarkAppMode()
+        {
+            try
+            {
+                if (Environment.OSVersion.Version.Major < 10 || Environment.OSVersion.Version.Build < 17763)
+                    return;
+
+                SetPreferredAppMode(1);
+            }
+            catch
+            {
+                // Cosmetic only; skip on OS builds where this undocumented ordinal is unavailable.
+            }
+        }
+
         static void CatchThreadException(object sender, ThreadExceptionEventArgs e)
         {
             new GUIcrash(e.Exception, version, gui).ShowDialog();
@@ -31,6 +52,8 @@ namespace DaRT
         [STAThread]
         static void Main(string[] args)
         {
+            EnablePreferredDarkAppMode();
+
             if (args.Length == 0)
             {
                 if (Debugger.IsAttached)
