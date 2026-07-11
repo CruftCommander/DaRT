@@ -136,6 +136,7 @@
       <SubType>Component</SubType>
     </Compile>
     <Compile Include="Helpers\FlashWindow.cs" />
+    <Compile Include="Helpers\ThemeManager.cs" />
     <Compile Include="Windows\GUImain.cs">
       <SubType>Form</SubType>
     </Compile>
