@@ -199,7 +199,13 @@ namespace DaRT
             if (darkModeChanged)
             {
                 foreach (Form form in Application.OpenForms)
+                {
                     ThemeManager.Apply(form);
+
+                    GUImain main = form as GUImain;
+                    if (main != null)
+                        main.RefreshBanner();
+                }
             }
 
             this.Close();

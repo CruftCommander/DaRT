@@ -32,8 +32,16 @@ namespace DaRT
     // - Text already appended to a RichTextBox before a theme switch keeps whatever
     //   color it was written with; only newly appended text is affected.
     // - A thin OS-drawn filler strip can remain visible past the last tab on an
-    //   owner-drawn TabControl's header; this is native tab-strip chrome outside
-    //   any single tab's paint rect and isn't worth hooking WM_PAINT to hide.
+    //   owner-drawn TabControl's header (and, more generally, anywhere a native
+    //   tab strip paints outside a single tab's DrawItem rect); this is native
+    //   chrome outside any tab's paint rect and isn't worth hooking
+    //   WM_PAINT/WM_ERASEBKGND to hide.
+    // - The side log strip (All/Console/Chat/Log, Alignment.Left/Right) is
+    //   deliberately excluded from owner-draw: it already renders correctly
+    //   rotated captions via native TabControl rendering that predates
+    //   ThemeManager, and taking it over just to recolor it risks breaking that
+    //   rendering. Only its TabPages are recolored; its header strip (rotated
+    //   text included) keeps native, light-colored chrome in dark mode.
     // - ListView scrollbars only render dark on Win10 1809+/Win11 builds that honor
     //   the undocumented uxtheme SetPreferredAppMode opt-in (called once in
     //   Program.cs); on older or unsupported builds they remain light. This is
@@ -58,6 +66,8 @@ namespace DaRT
             public TabDrawMode TabDrawMode;
             public TabSizeMode TabSizeMode;
             public Size TabItemSize;
+            public Point TabPadding;
+            public bool GridLines;
         }
 
         private static readonly ConditionalWeakTable<Control, ControlState> _states = new ConditionalWeakTable<Control, ControlState>();
@@ -90,6 +100,12 @@ namespace DaRT
 
             ApplyTitleBar(form, dark);
             ApplyToolStripRenderer(dark);
+
+            // Force a full repaint of the whole tree so nothing is left showing a
+            // stale bitmap from before the color/owner-draw changes above (this
+            // matters most for controls overlaid on top of others, e.g. labels
+            // positioned over a TabControl's header strip).
+            form.Invalidate(true);
         }
 
         public static Color LogColor(Color color)
@@ -154,7 +170,12 @@ namespace DaRT
                 state.TabDrawMode = tab.DrawMode;
                 state.TabSizeMode = tab.SizeMode;
                 state.TabItemSize = tab.ItemSize;
+                state.TabPadding = tab.Padding;
             }
+
+            ListView listView = control as ListView;
+            if (listView != null)
+                state.GridLines = listView.GridLines;
 
             state.Captured = true;
         }
@@ -190,9 +211,17 @@ namespace DaRT
             control.ForeColor = dark ? TextColor : state.ForeColor;
 
             if (dark)
-                control.BackColor = state.BackColor == Color.Transparent ? Color.Transparent : FormBack;
+            {
+                // Match whatever the immediate parent was themed to (Form, Panel,
+                // SplitterPanel, TabPage, ...) rather than a single hardcoded shade,
+                // so an overlaid label never mismatches the surface behind it.
+                Color parentBack = control.Parent != null ? control.Parent.BackColor : FormBack;
+                control.BackColor = state.BackColor == Color.Transparent ? Color.Transparent : parentBack;
+            }
             else
+            {
                 control.BackColor = state.BackColor;
+            }
         }
 
         private static void ApplyButton(Button button, ControlState state, bool dark)
@@ -242,6 +271,7 @@ namespace DaRT
         {
             listView.BackColor = dark ? InputBack : state.BackColor;
             listView.ForeColor = dark ? TextColor : state.ForeColor;
+            listView.GridLines = dark ? false : state.GridLines;
 
             listView.OwnerDraw = dark;
             listView.DrawColumnHeader -= ListViewDrawColumnHeader;
@@ -301,43 +331,32 @@ namespace DaRT
         {
             tabControl.DrawItem -= TabControlDrawItem;
 
-            if (dark)
+            // The side log strip (All/Console/Chat/Log) is Left/Right-aligned and
+            // already renders correctly-rotated captions via native TabControl
+            // rendering - that predates ThemeManager and must stay untouched. Only
+            // the top-aligned strips (main tabs, Settings tabs) get owner-drawn.
+            bool ownerDraw = dark && tabControl.Alignment != TabAlignment.Left && tabControl.Alignment != TabAlignment.Right;
+
+            if (ownerDraw)
             {
                 tabControl.DrawMode = TabDrawMode.OwnerDrawFixed;
                 tabControl.DrawItem += TabControlDrawItem;
-                tabControl.SizeMode = TabSizeMode.Fixed;
-                tabControl.ItemSize = MeasureTabItemSize(tabControl);
+                // TabSizeMode.Normal (the original mode) still auto-sizes each tab to
+                // its own caption under OwnerDrawFixed - only the padding needs a
+                // couple extra pixels since TextRenderer's NoPadding measurement runs
+                // slightly tighter than the native renderer it replaces.
+                tabControl.Padding = new Point(state.TabPadding.X + 2, state.TabPadding.Y);
             }
             else
             {
                 tabControl.DrawMode = state.TabDrawMode;
-                tabControl.SizeMode = state.TabSizeMode;
-                tabControl.ItemSize = state.TabItemSize;
+                tabControl.Padding = state.TabPadding;
             }
+
+            tabControl.SizeMode = state.TabSizeMode;
+            tabControl.ItemSize = state.TabItemSize;
 
             tabControl.Invalidate();
-        }
-
-        private static Size MeasureTabItemSize(TabControl tabControl)
-        {
-            int maxTextWidth = 0;
-            foreach (TabPage page in tabControl.TabPages)
-            {
-                int width = TextRenderer.MeasureText(page.Text, tabControl.Font).Width;
-                if (width > maxTextWidth)
-                    maxTextWidth = width;
-            }
-
-            int tabWidth = maxTextWidth + 24;
-            int tabHeight = tabControl.Font.Height + 10;
-
-            // For Alignment Left/Right, WinForms swaps ItemSize semantics: Width becomes
-            // the on-screen tab height (perpendicular to the strip) and Height becomes
-            // the on-screen tab width (along the strip, where the rotated text runs).
-            if (tabControl.Alignment == TabAlignment.Left || tabControl.Alignment == TabAlignment.Right)
-                return new Size(tabHeight, tabWidth);
-
-            return new Size(tabWidth, tabHeight);
         }
 
         private static void TabControlDrawItem(object sender, DrawItemEventArgs e)
@@ -361,31 +380,8 @@ namespace DaRT
             using (Pen borderPen = new Pen(BorderColor))
                 e.Graphics.DrawRectangle(borderPen, fillBounds.X, fillBounds.Y, fillBounds.Width - 1, fillBounds.Height - 1);
 
-            using (Brush textBrush = new SolidBrush(TextColor))
-            {
-                if (tabControl.Alignment == TabAlignment.Left || tabControl.Alignment == TabAlignment.Right)
-                {
-                    StringFormat format = new StringFormat();
-                    format.Alignment = StringAlignment.Center;
-                    format.LineAlignment = StringAlignment.Center;
-
-                    System.Drawing.Drawing2D.GraphicsState savedState = e.Graphics.Save();
-
-                    PointF center = new PointF(e.Bounds.X + e.Bounds.Width / 2f, e.Bounds.Y + e.Bounds.Height / 2f);
-                    e.Graphics.TranslateTransform(center.X, center.Y);
-                    e.Graphics.RotateTransform(tabControl.Alignment == TabAlignment.Left ? -90 : 90);
-
-                    RectangleF rotatedBounds = new RectangleF(-e.Bounds.Height / 2f, -e.Bounds.Width / 2f, e.Bounds.Height, e.Bounds.Width);
-                    e.Graphics.DrawString(page.Text, tabControl.Font, textBrush, rotatedBounds, format);
-
-                    e.Graphics.Restore(savedState);
-                }
-                else
-                {
-                    TextFormatFlags flags = TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis;
-                    TextRenderer.DrawText(e.Graphics, page.Text, tabControl.Font, e.Bounds, TextColor, flags);
-                }
-            }
+            TextFormatFlags flags = TextFormatFlags.SingleLine | TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding;
+            TextRenderer.DrawText(e.Graphics, page.Text, tabControl.Font, e.Bounds, TextColor, flags);
         }
 
         private static void ApplyDarkScrollbar(Control control, bool dark)

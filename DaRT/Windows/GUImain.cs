@@ -3168,6 +3168,18 @@ namespace DaRT
             }
 
             ThemeManager.Apply(this);
+            RefreshBanner();
+        }
+
+        // The banner PictureBox's Image is a bitmap rendered on demand (see
+        // GetImage) using this.BackColor/this.ForeColor at render time - it does
+        // not repaint on its own when the theme changes. This regenerates the
+        // idle "please connect" placeholder so it matches the current theme; it
+        // deliberately leaves an in-progress/real server banner image alone.
+        public void RefreshBanner()
+        {
+            if (!rcon.Connected)
+                banner.Image = GetImage("Please connect to a server...");
         }
 
         private void news_Click(object sender, EventArgs args)
